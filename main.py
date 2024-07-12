@@ -11,6 +11,10 @@ import time
 import cv2
 import os
 
+from arguments import ParamGroup
+from gaussian_model import GaussianModel
+from scene import Scene
+
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 intents = discord.Intents.all()
@@ -20,6 +24,26 @@ scene_queue = []
 
 # Almost all of this comes from https://github.com/graphdeco-inria/gaussian-splatting/
 # please go check it out!
+
+class OptimizationParams(ParamGroup):
+    def __init__(self):
+        self.iterations = 30_000
+        self.position_lr_init = 0.00016
+        self.position_lr_final = 0.0000016
+        self.position_lr_delay_mult = 0.01
+        self.position_lr_max_steps = 30_000
+        self.feature_lr = 0.0025
+        self.opacity_lr = 0.05
+        self.scaling_lr = 0.005
+        self.rotation_lr = 0.001
+        self.percent_dense = 0.01
+        self.lambda_dssim = 0.2
+        self.densification_interval = 100
+        self.opacity_reset_interval = 3000
+        self.densify_from_iter = 500
+        self.densify_until_iter = 15_000
+        self.densify_grad_threshold = 0.0002
+        self.random_background = False
 
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
@@ -129,7 +153,11 @@ def scene_runner():
                         source_file = os.path.join(current_scene.path, "sparse", image)
                         dest_file = os.path.join(current_scene.path, "sparse", "0", image)
                         shutil.move(source_file, dest_file)
-
+                    first_iter = 0
+                    gaussians = GaussianModel(3)
+                    scene = Scene(current_scene.path + "model", current_scene.path,gaussians)
+                    gaussians.training_setup(OptimizationParams())
+                    bg_color = [0, 0, 0]
         time.sleep(0.01)
 
 

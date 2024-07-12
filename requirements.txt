@@ -5,3 +5,4 @@ torch
 numpy
 pillow
 plyfile
+git+https://github.com/camenduru/simple-knn
