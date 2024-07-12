@@ -48,45 +48,6 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
         return ssim_map.mean(1).mean(1).mean(1)
 
 
-class ParamGroup:
-    def __init__(self, parser: ArgumentParser, name : str, fill_none = False):
-        group = parser.add_argument_group(name)
-        for key, value in vars(self).items():
-            shorthand = False
-            if key.startswith("_"):
-                shorthand = True
-                key = key[1:]
-            t = type(value)
-            value = value if not fill_none else None
-            if shorthand:
-                if t == bool:
-                    group.add_argument("--" + key, ("-" + key[0:1]), default=value, action="store_true")
-                else:
-                    group.add_argument("--" + key, ("-" + key[0:1]), default=value, type=t)
-            else:
-                if t == bool:
-                    group.add_argument("--" + key, default=value, action="store_true")
-                else:
-                    group.add_argument("--" + key, default=value, type=t)
-
-
-class ModelParams(ParamGroup):
-    def __init__(self, parser, sentinel=False):
-        self.sh_degree = 3
-        self._source_path = ""
-        self._model_path = ""
-        self._images = "images"
-        self._resolution = -1
-        self._white_background = False
-        self.data_device = "cuda"
-        self.eval = False
-        super().__init__(parser, "Loading Parameters", sentinel)
-
-    def extract(self, args):
-        g = super().extract(args)
-        g.source_path = os.path.abspath(g.source_path)
-        return g
-
 def scene_runner():
     while True:
         if scene_queue != []:
@@ -106,7 +67,7 @@ def scene_runner():
                 else:
                     os.mkdir(current_scene.path + "frames")
                     fps_in = capture.get(cv2.CAP_PROP_FPS)
-                    fps_out = int(80 / frames * fps_in)
+                    fps_out = int(100 / frames * fps_in)
                     width = capture.get(cv2.CAP_PROP_FRAME_WIDTH)
                     height = capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
                     if height > width:
@@ -130,6 +91,9 @@ def scene_runner():
                             coro=current_scene.interaction.edit_original_message(
                                 "Something went wrong while extracting features."), loop=client.loop)
                         continue
+                    asyncio.run_coroutine_threadsafe(
+                        coro=current_scene.interaction.edit_original_message(
+                            "Finished extracting features"), loop=client.loop)
                     call_code = subprocess.check_call(
                         "colmap exhaustive_matcher --database_path " + current_scene.path + "distorted/database.db --SiftMatching.use_gpu True",
                         shell=True)
@@ -139,6 +103,10 @@ def scene_runner():
                                 "Something went wrong while matching features. Try a video with more frame overlap!"),
                             loop=client.loop)
                         continue
+                    asyncio.run_coroutine_threadsafe(
+                        coro=current_scene.interaction.edit_original_message(
+                            "Finished matching features"),
+                        loop=client.loop)
                     call_code = subprocess.check_call(
                         "colmap mapper --database_path " + current_scene.path + "distorted/database.db --SiftMatching.use_gpu True --image_path " + current_scene.path + "frames --output_path" + current_scene.path + "distorted/sparse --Mapper.ba_global_function_tolerance=0.000001")
                     if call_code != 0:
@@ -147,6 +115,10 @@ def scene_runner():
                                 "Something went wrong while mapping frames. Try a video with more frame overlap!"),
                             loop=client.loop)
                         continue
+                    asyncio.run_coroutine_threadsafe(
+                        coro=current_scene.interaction.edit_original_message(
+                            "Finished mapping frames"),
+                        loop=client.loop)
                     call_code = subprocess.check_call(
                         "colmap image_undistorter --image_path " + current_scene.path + "frames --output_path " + current_scene.path + " --input_path " + current_scene + "distorted/sparse/0")
                     distorted = os.listdir(current_scene.path + "sparse")
@@ -157,6 +129,7 @@ def scene_runner():
                         source_file = os.path.join(current_scene.path, "sparse", image)
                         dest_file = os.path.join(current_scene.path, "sparse", "0", image)
                         shutil.move(source_file, dest_file)
+
         time.sleep(0.01)
 
 

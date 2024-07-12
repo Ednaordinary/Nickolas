@@ -2,3 +2,6 @@ nextcord
 python-dotenv
 opencv-python
 torch
+numpy
+pillow
+plyfile
