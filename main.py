@@ -158,6 +158,19 @@ def scene_runner():
                     scene = Scene(current_scene.path + "model", current_scene.path,gaussians)
                     gaussians.training_setup(OptimizationParams())
                     bg_color = [0, 0, 0]
+                    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+                    viewpoint_stack = None
+                    ema_loss_for_log = 0.0
+                    first_iter += 1
+                    for iteration in range(first_iter, 30001):
+                        gaussians.update_learning_rate(iteration)
+                        if iteration % 1000 == 0:
+                            gaussians.oneupSHdegree()
+                        if not viewpoint_stack:
+                            viewpoint_stack = scene.getTrainCameras().copy()
+                        viewpoint_cam = viewpoint_stack.pop(random.randint(0, len(viewpoint_stack)-1))
+                        bg = background
+                        render_pkg = render(viewpoint_cam, gaussians)
         time.sleep(0.01)
 
 
