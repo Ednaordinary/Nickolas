@@ -14,6 +14,7 @@ import os
 from arguments import ParamGroup
 from gaussian_model import GaussianModel
 from scene import Scene
+from render import render
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
