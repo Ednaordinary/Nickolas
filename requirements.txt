@@ -6,3 +6,4 @@ numpy
 pillow
 plyfile
 git+https://github.com/camenduru/simple-knn
+git+https://github.com/graphdeco-inria/diff-gaussian-rasterization/

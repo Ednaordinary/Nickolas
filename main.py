@@ -15,6 +15,7 @@ from arguments import ParamGroup
 from gaussian_model import GaussianModel
 from scene import Scene
 from render import render
+from arguments import OptimizationParams, PipelineParams
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -26,25 +27,6 @@ scene_queue = []
 # Almost all of this comes from https://github.com/graphdeco-inria/gaussian-splatting/
 # please go check it out!
 
-class OptimizationParams(ParamGroup):
-    def __init__(self):
-        self.iterations = 30_000
-        self.position_lr_init = 0.00016
-        self.position_lr_final = 0.0000016
-        self.position_lr_delay_mult = 0.01
-        self.position_lr_max_steps = 30_000
-        self.feature_lr = 0.0025
-        self.opacity_lr = 0.05
-        self.scaling_lr = 0.005
-        self.rotation_lr = 0.001
-        self.percent_dense = 0.01
-        self.lambda_dssim = 0.2
-        self.densification_interval = 100
-        self.opacity_reset_interval = 3000
-        self.densify_from_iter = 500
-        self.densify_until_iter = 15_000
-        self.densify_grad_threshold = 0.0002
-        self.random_background = False
 
 def l1_loss(network_output, gt):
     return torch.abs((network_output - gt)).mean()
@@ -156,6 +138,7 @@ def scene_runner():
                         shutil.move(source_file, dest_file)
                     first_iter = 0
                     gaussians = GaussianModel(3)
+                    pipe = PipelineParams()
                     scene = Scene(current_scene.path + "model", current_scene.path,gaussians)
                     gaussians.training_setup(OptimizationParams())
                     bg_color = [0, 0, 0]
@@ -170,8 +153,12 @@ def scene_runner():
                         if not viewpoint_stack:
                             viewpoint_stack = scene.getTrainCameras().copy()
                         viewpoint_cam = viewpoint_stack.pop(random.randint(0, len(viewpoint_stack)-1))
-                        bg = background
-                        render_pkg = render(viewpoint_cam, gaussians)
+                        render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+                        image = render_pkg["render"]
+                        viewspace_point_tensor = render_pkg["viewspace_points"]
+                        visibility_filter = render_pkg["visibility_filter"]
+                        radii = render_pkg["radii"]
+                        gt_imag e=
         time.sleep(0.01)
 
 
