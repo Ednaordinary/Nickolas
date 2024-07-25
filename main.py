@@ -140,7 +140,7 @@ async def async_scene_runner():
                         loop=client.loop)
                     try:
                         call_code = subprocess.check_call(
-                            "colmap image_undistorter --image_path " + current_scene.path + "frames --output_path " + current_scene.path + " --input_path " + current_scene.path + "distorted/sparse/0 --output_path " + current_scene.path + " --output_type COLMAP", shell=True)
+                            "colmap image_undistorter --image_path " + current_scene.path + "frames --output_path " + current_scene.path + " --input_path " + current_scene.path + "distorted/sparse/0 --output_type COLMAP", shell=True)
                     except Exception as e:
                         print(repr(e))
                         call_code = 1
@@ -151,8 +151,8 @@ async def async_scene_runner():
                             loop=client.loop)
                         scene_queue.pop(0)
                         continue
-                    distorted = os.listdir(current_scene.path + "/distorted/sparse")
-                    os.makedirs(current_scene.path + "distorted/sparse/0", exist_ok=True)
+                    distorted = os.listdir(current_scene.path + "sparse")
+                    os.makedirs(current_scene.path + "sparse/0", exist_ok=True)
                     for image in distorted:
                         if image == '0':
                             continue
@@ -165,6 +165,7 @@ async def async_scene_runner():
                             coro=current_scene.message.edit(
                                 "Waiting for " + str(i) + " before loading model"), loop=client.loop)
                         pass
+                    os.makedirs(current_scene.path + "model", exist_ok=True)
                     first_iter = 0
                     gaussians = GaussianModel(3)
                     pipe = PipelineParams()
@@ -174,9 +175,14 @@ async def async_scene_runner():
                     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
                     viewpoint_stack = None
                     ema_loss_for_log = 0.0
-                    progress_bar = tqdm(range(first_iter, 30000), desc="Training progress")
+                    progress_bar = tqdm.tqdm(range(first_iter, 30000), desc="Training progress")
                     first_iter += 1
                     for iteration in range(first_iter, 30001):
+                        if time.time() > limiter + 0.8:
+                            asyncio.run_coroutine_threadsafe(
+                                coro=current_scene.message.edit(
+                                    "Scene modeling: " + str(round(iteration/300, 2)) + "%"), loop=client.loop)
+                            limiter = time.time()
                         gaussians.update_learning_rate(iteration)
                         if iteration % 1000 == 0:
                             gaussians.oneupSHdegree()
@@ -192,7 +198,7 @@ async def async_scene_runner():
                         Ll1 = l1_loss(image, gt_image)
                         loss = 0.8 * Ll1 + 0.2 * (1.0 - ssim(image, gt_image))
                         loss.backward()
-                        with torch.no_grad:
+                        with torch.no_grad():
                             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
                             progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
                             progress_bar.update(1)
