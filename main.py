@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 import torch.nn.functional as F
+import tqdm
 from dotenv import load_dotenv
 import nextcord as discord
 import subprocess
@@ -16,6 +17,7 @@ from gaussian_model import GaussianModel
 from scene import Scene
 from render import render
 from arguments import OptimizationParams, PipelineParams
+from loss import l1_loss, ssim, _ssim
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
@@ -27,35 +29,7 @@ scene_queue = []
 # Almost all of this comes from https://github.com/graphdeco-inria/gaussian-splatting/
 # please go check it out!
 
-
-def l1_loss(network_output, gt):
-    return torch.abs((network_output - gt)).mean()
-
-
-def _ssim(img1, img2, window, window_size, channel, size_average=True):
-    mu1 = F.conv2d(img1, window, padding=window_size // 2, groups=channel)
-    mu2 = F.conv2d(img2, window, padding=window_size // 2, groups=channel)
-
-    mu1_sq = mu1.pow(2)
-    mu2_sq = mu2.pow(2)
-    mu1_mu2 = mu1 * mu2
-
-    sigma1_sq = F.conv2d(img1 * img1, window, padding=window_size // 2, groups=channel) - mu1_sq
-    sigma2_sq = F.conv2d(img2 * img2, window, padding=window_size // 2, groups=channel) - mu2_sq
-    sigma12 = F.conv2d(img1 * img2, window, padding=window_size // 2, groups=channel) - mu1_mu2
-
-    C1 = 0.01 ** 2
-    C2 = 0.03 ** 2
-
-    ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-
-    if size_average:
-        return ssim_map.mean()
-    else:
-        return ssim_map.mean(1).mean(1).mean(1)
-
-
-def scene_runner():
+async def scene_runner():
     while True:
         if scene_queue != []:
             current_scene = scene_queue[0]
@@ -139,12 +113,13 @@ def scene_runner():
                     first_iter = 0
                     gaussians = GaussianModel(3)
                     pipe = PipelineParams()
-                    scene = Scene(current_scene.path + "model", current_scene.path,gaussians)
+                    scene = Scene(current_scene.path + "model", current_scene.path, gaussians)
                     gaussians.training_setup(OptimizationParams())
                     bg_color = [0, 0, 0]
                     background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
                     viewpoint_stack = None
                     ema_loss_for_log = 0.0
+                    progress_bar = tqdm(range(first_iter, 30000), desc="Training progress")
                     first_iter += 1
                     for iteration in range(first_iter, 30001):
                         gaussians.update_learning_rate(iteration)
@@ -158,7 +133,31 @@ def scene_runner():
                         viewspace_point_tensor = render_pkg["viewspace_points"]
                         visibility_filter = render_pkg["visibility_filter"]
                         radii = render_pkg["radii"]
-                        gt_imag e=
+                        gt_image = viewpoint_cam.original_image.cuda()
+                        Ll1 = l1_loss(image, gt_image)
+                        loss = 0.8 * Ll1 + 0.2 * (1.0 - ssim(image, gt_image))
+                        loss.backward()
+                        with torch.no_grad:
+                            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+                            progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+                            progress_bar.update(1)
+                            # Densification
+                            if iteration < 15000:
+                                gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+                                gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                                if iteration > 500 and iteration % 100 == 0:
+                                    size_threshold = 20 if iteration > 3000 else None
+                                    gaussians.densify_and_prune(0.0002, 0.005, scene.cameras_extent,
+                                                                size_threshold)
+                                if iteration % 3000 == 0:
+                                    gaussians.reset_opacity()
+                            # Optimizer
+                            if iteration < 30000:
+                                gaussians.optimizer.step()
+                                gaussians.optimizer.zero_grad(set_to_none=True)
+                            if iteration == 30000:
+                                progress_bar.close()
+                                scene.save("model")
         time.sleep(0.01)
 
 
